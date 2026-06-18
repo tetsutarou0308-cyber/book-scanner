@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>📚 書籍スキャナー</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { background: #0f172a; color: #e2e8f0; font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; min-height: 100vh; }
+
+header { background: #1e293b; border-bottom: 1px solid #1e3a5f; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 18px; font-weight: 700; color: #f8fafc; }
+header p { font-size: 12px; color: #64748b; margin-top: 2px; }
+.status-badge { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 20px; background: #1e3a5f; color: #60a5fa; white-space: nowrap; }
+
+main { max-width: 600px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.card { background: #1e293b; border-radius: 14px; border: 1px solid #334155; overflow: hidden; }
+.card-header { padding: 12px 16px; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 14px; }
+
+/* camera */
+#camera-wrap { position: relative; background: #000; display: none; }
+#preview { width: 100%; display: block; max-height: 300px; object-fit: cover; }
+.scan-ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.scan-frame { width: 220px; height: 110px; border: 2px solid #3b82f6; border-radius: 8px; position: relative; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
+.scan-line { position: absolute; left: 4px; right: 4px; height: 2px; background: #60a5fa; animation: sweep 1.8s ease-in-out infinite; opacity: 0.8; }
+@keyframes sweep { 0%,100%{top:15%} 50%{top:78%} }
+.corner { position: absolute; width: 16px; height: 16px; border-color: #93c5fd; border-style: solid; }
+.tl{top:-2px;left:-2px;border-width:3px 0 0 3px}
+.tr{top:-2px;right:-2px;border-width:3px 3px 0 0}
+.bl{bottom:-2px;left:-2px;border-width:0 0 3px 3px}
+.br{bottom:-2px;right:-2px;border-width:0 3px 3px 0}
+
+.controls { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.btn { width: 100%; padding: 13px; border-radius: 10px; border: none; cursor: pointer; font-weight: 700; font-size: 15px; }
+.btn-blue { background: #1d4ed8; color: #fff; }
+.btn-red  { background: #991b1b; color: #fff; }
+.btn-green{ background: #047857; color: #fff; }
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 15px; outline: none; -webkit-appearance: none; }
+.row input:focus { border-color: #3b82f6; }
+.row input::placeholder { color: #475569; }
+.row .btn { width: auto; padding: 12px 18px; font-size: 14px; flex-shrink: 0; }
+
+.msg { padding: 10px 13px; border-radius: 10px; font-size: 13px; display: none; }
+.msg.show { display: block; }
+.msg-ok  { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
+.msg-err { background: #450a0a; color: #fca5a5; border: 1px solid #dc2626; }
+
+/* steps */
+.steps { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.step { background: #0f172a; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #94a3b8; display: flex; align-items: center; gap: 10px; }
+.step-num { background: #1d4ed8; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+/* list */
+#book-list { max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.empty { padding: 44px 20px; text-align: center; color: #475569; }
+.empty-icon { font-size: 44px; margin-bottom: 10px; }
+.book-item { padding: 11px 16px; border-bottom: 1px solid #1e3a5f; display: flex; gap: 10px; align-items: flex-start; }
+.book-item:last-child { border-bottom: none; }
+.thumb-box { width: 40px; height: 56px; border-radius: 4px; flex-shrink: 0; background: #1e3a5f; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden; }
+.thumb-box img { width: 100%; height: 100%; object-fit: cover; }
+.binfo { flex: 1; min-width: 0; }
+.btitle { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bauthor { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+.bmeta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.btn-del { border: 1px solid #334155; background: transparent; color: #64748b; cursor: pointer; font-size: 12px; padding: 4px 10px; border-radius: 6px; flex-shrink: 0; }
+
+footer { text-align: center; font-size: 11px; color: #334155; padding: 0 16px 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:24px">📚</span>
+  <div>
+    <h1>書籍スキャナー</h1>
+    <p>バーコード読み取り → 書籍リスト作成</p>
+  </div>
+  <span class="status-badge" id="status-badge">待機中</span>
+</header>
+
+<main>
+
+  <!-- scanner card -->
+  <div class="card">
+    <div class="card-header">📷 バーコードスキャン</div>
+    <div id="camera-wrap">
+      <video id="preview" autoplay playsinline muted webkit-playsinline></video>
+      <div class="scan-ui">
+        <div class="scan-frame">
+          <div class="scan-line"></div>
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn btn-blue" id="cam-btn" onclick="toggleCamera()">📷 カメラを起動</button>
+      <div class="row">
+        <input id="isbn-input" type="tel" placeholder="ISBN を手入力 (13桁)" inputmode="numeric"
+          onkeydown="if(event.key==='Enter'){addManual();this.blur()}">
+        <button class="btn btn-blue" onclick="addManual()">追加</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+
+  <!-- instructions — shown only when no books yet -->
+  <div class="card" id="how-card">
+    <div class="card-header">💡 使い方</div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div>「カメラを起動」をタップしてカメラを許可</div>
+      <div class="step"><div class="step-num">2</div>本の裏のバーコード（ISBN）をフレームに合わせる</div>
+      <div class="step"><div class="step-num">3</div>自動で書籍情報を取得・リストに追加</div>
+      <div class="step"><div class="step-num">4</div>すべて登録したら「CSV ダウンロード」で保存</div>
+    </div>
+  </div>
+
+  <!-- book list -->
+  <div class="card">
+    <div class="card-header">
+      📋 書籍リスト&ensp;<span id="count" style="color:#3b82f6;font-size:13px">0冊</span>
+      <button class="btn btn-green" id="dl-btn" onclick="downloadCSV()" style="display:none;width:auto;padding:7px 14px;font-size:13px">⬇ CSV</button>
+    </div>
+    <div id="book-list">
+      <div class="empty"><div class="empty-icon">📖</div><p>まだ書籍がありません</p></div>
+    </div>
+  </div>
+
+  <footer>書籍情報は Google Books API より取得</footer>
+</main>
+
+<script>
+/* ── globals ── */
+let books = [], cameraActive = false, stream = null, scanTimer = null;
+let lastCode = '', lastTime = 0;
+
+/* ── status ── */
+const COLORS = {idle:'#64748b',scanning:'#3b82f6',fetching:'#f59e0b',success:'#10b981',error:'#ef4444'};
+const LABELS = {idle:'待機中',scanning:'スキャン中',fetching:'取得中…',success:'登録完了！',error:'エラー'};
+function setStatus(s){
+  const b = document.getElementById('status-badge');
+  b.textContent = LABELS[s]; b.style.color = COLORS[s];
+  b.style.background = COLORS[s]+'22'; b.style.borderColor = COLORS[s];
+}
+function toast(msg, ok=false){
+  const el = document.getElementById('msg');
+  el.textContent = (ok?'✓ ':'⚠ ') + msg;
+  el.className = 'msg show ' + (ok?'msg-ok':'msg-err');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>el.classList.remove('show'), 3500);
+}
+
+/* ── camera (getUserMedia + canvas poll) ── */
+async function toggleCamera(){
+  if(cameraActive){ stopCamera(); return; }
+  const btn = document.getElementById('cam-btn');
+  btn.textContent = '起動中…'; btn.disabled = true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
+    });
+    const vid = document.getElementById('preview');
+    vid.srcObject = stream;
+    await vid.play();
+    document.getElementById('camera-wrap').style.display = 'block';
+    cameraActive = true;
+    btn.textContent = '⏹ 停止'; btn.className = 'btn btn-red'; btn.disabled = false;
+    setStatus('scanning');
+    startScan(vid);
+  } catch(e){
+    let msg = 'カメラを起動できませんでした';
+    if(e.name==='NotAllowedError') msg = 'カメラの許可が必要です。Safariの設定でカメラを許可してください';
+    else if(e.name==='NotFoundError') msg = 'カメラが見つかりません';
+    toast(msg); btn.textContent='📷 カメラを起動'; btn.className='btn btn-blue'; btn.disabled=false;
+  }
+}
+
+function stopCamera(){
+  clearInterval(scanTimer);
+  if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null;
+  document.getElementById('camera-wrap').style.display='none';
+  const btn=document.getElementById('cam-btn');
+  btn.textContent='📷 カメラを起動'; btn.className='btn btn-blue'; btn.disabled=false;
+  cameraActive=false; lastCode=''; setStatus('idle');
+}
+
+/* ── barcode detection via BarcodeDetector or canvas+WASM fallback ── */
+function startScan(vid){
+  if('BarcodeDetector' in window){
+    const det = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+    scanTimer = setInterval(async()=>{
+      if(!cameraActive) return;
+      try{
+        const codes = await det.detect(vid);
+        if(codes.length) onCode(codes[0].rawValue);
+      }catch{}
+    }, 400);
+  } else {
+    // canvas + ZXing WASM via dynamic import
+    loadZXing().then(ZXing=>{
+      const canvas = document.createElement('canvas');
+      const hints = new ZXing.DecodeHints();
+      scanTimer = setInterval(()=>{
+        if(!cameraActive||vid.readyState<2) return;
+        canvas.width=vid.videoWidth; canvas.height=vid.videoHeight;
+        canvas.getContext('2d').drawImage(vid,0,0);
+        try{
+          const res = ZXing.decode(canvas);
+          if(res) onCode(res.text);
+        }catch{}
+      }, 400);
+    }).catch(()=>toast('バーコードライブラリの読み込みに失敗しました。手動入力をご利用ください'));
+  }
+}
+
+let zxingPromise=null;
+function loadZXing(){
+  if(zxingPromise) return zxingPromise;
+  zxingPromise = new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.21.1/index.min.js';
+    s.onload=()=>{
+      // adapt ZXingBrowser to simple decode helper
+      const reader = new ZXingBrowser.BrowserMultiFormatReader();
+      res({ decode: (canvas)=>{
+        try{ return reader.decodeFromCanvas(canvas); } catch{ return null; }
+      }});
+    };
+    s.onerror=rej;
+    document.head.appendChild(s);
+  });
+  return zxingPromise;
+}
+
+function onCode(code){
+  const now = Date.now();
+  if(code===lastCode && now-lastTime<4000) return;
+  lastCode=code; lastTime=now;
+  addBook(code);
+}
+
+/* ── book fetch ── */
+async function fetchBook(isbn){
+  const clean=isbn.replace(/[^0-9X]/gi,'');
+  const r=await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${clean}`);
+  const d=await r.json();
+  if(!d.items?.length) throw new Error('書籍が見つかりません ('+clean+')');
+  const v=d.items[0].volumeInfo||{};
+  return {
+    id:Date.now(),
+    isbn:(v.industryIdentifiers||[]).find(i=>i.type==='ISBN_13')?.identifier||
+         (v.industryIdentifiers||[]).find(i=>i.type==='ISBN_10')?.identifier||clean,
+    title:v.title||'不明', authors:(v.authors||[]).join(', ')||'不明',
+    publisher:v.publisher||'—', publishedDate:v.publishedDate||'—',
+    pageCount:v.pageCount||'—', categories:(v.categories||[]).join(', ')||'—',
+    thumbnail:v.imageLinks?.thumbnail||null,
+    description:(v.description||'').slice(0,100)||'—',
+  };
+}
+
+async function addBook(isbn){
+  const clean=isbn.replace(/[^0-9X]/gi,'');
+  if(clean.length<8){ toast('ISBN が短すぎます'); return; }
+  if(books.find(b=>b.isbn===clean)){ toast('すでに登録済みです'); return; }
+  setStatus('fetching');
+  try{
+    const book=await fetchBook(isbn);
+    books.unshift(book); renderList();
+    setStatus('success'); toast(book.title+' を登録しました', true);
+    setTimeout(()=>setStatus(cameraActive?'scanning':'idle'), 2000);
+  }catch(e){
+    setStatus('error'); toast(e.message);
+    setTimeout(()=>setStatus(cameraActive?'scanning':'idle'), 2500);
+  }
+}
+
+function addManual(){
+  const v=document.getElementById('isbn-input').value.trim();
+  if(!v) return;
+  addBook(v); document.getElementById('isbn-input').value='';
+}
+
+/* ── render ── */
+function renderList(){
+  document.getElementById('count').textContent=books.length+'冊';
+  document.getElementById('dl-btn').style.display=books.length?'inline-block':'none';
+  document.getElementById('how-card').style.display=books.length?'none':'block';
+  const el=document.getElementById('book-list');
+  if(!books.length){
+    el.innerHTML=`<div class="empty"><div class="empty-icon">📖</div><p>まだ書籍がありません</p></div>`;
+    return;
+  }
+  el.innerHTML=books.map(b=>`
+    <div class="book-item">
+      <div class="thumb-box">${b.thumbnail?`<img src="${b.thumbnail}" alt="">`:' 📗'}</div>
+      <div class="binfo">
+        <div class="btitle" title="${x(b.title)}">${x(b.title)}</div>
+        <div class="bauthor">${x(b.authors)}</div>
+        <div class="bmeta">${x(b.publisher)} · ${b.publishedDate} · ${b.pageCount}p</div>
+      </div>
+      <button class="btn-del" onclick="removeBook(${b.id})">削除</button>
+    </div>`).join('');
+}
+function x(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function removeBook(id){ books=books.filter(b=>b.id!==id); renderList(); }
+
+/* ── CSV ── */
+function downloadCSV(){
+  const H=['ISBN','タイトル','著者','出版社','出版日','ページ数','カテゴリ','概要'];
+  const rows=books.map(b=>[b.isbn,b.title,b.authors,b.publisher,b.publishedDate,b.pageCount,b.categories,b.description]
+    .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+  const csv='\uFEFF'+[H.join(','),...rows].join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`書籍リスト_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
